@@ -1,0 +1,14 @@
+{
+  "name": "instacart-splitwise",
+  "packageManager": "yarn@4.9.2",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"yarn workspace backend dev\" \"yarn workspace frontend dev\""
+  }
+}
