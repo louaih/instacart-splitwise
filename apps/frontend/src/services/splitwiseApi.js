@@ -1,48 +1,65 @@
-// Splitwise API Service using the keriwarr/splitwise npm package
-import Splitwise from 'splitwise'
-
+// Direct Splitwise API implementation using fetch
 class SplitwiseApiService {
   constructor() {
-    this.consumerKey = import.meta.env.VITE_SPLITWISE_CONSUMER_KEY
-    this.consumerSecret = import.meta.env.VITE_SPLITWISE_CONSUMER_SECRET
+    this.apiKey = import.meta.env.VITE_SPLITWISE_API_KEY
+    this.baseUrl = 'https://secure.splitwise.com/api/v3.0'
     
     // Debug logging
     console.log('Splitwise API Service - Environment Variables:')
-    console.log('Consumer Key:', this.consumerKey ? 'SET' : 'NOT SET')
-    console.log('Consumer Secret:', this.consumerSecret ? 'SET' : 'NOT SET')
-    
-    // Initialize the Splitwise SDK
-    this.splitwise = null
-    if (this.consumerKey && this.consumerSecret) {
-      try {
-        this.splitwise = Splitwise({
-          consumerKey: this.consumerKey,
-          consumerSecret: this.consumerSecret
-        })
-        console.log('Splitwise SDK initialized successfully')
-      } catch (error) {
-        console.error('Error initializing Splitwise SDK:', error)
-      }
-    } else {
-      console.error('Missing required environment variables for Splitwise API')
-    }
+    console.log('API Key:', this.apiKey ? 'SET' : 'NOT SET')
   }
 
   // Check if API is properly initialized
   isInitialized() {
-    return this.splitwise !== null
+    return this.apiKey !== null && this.apiKey !== undefined
+  }
+
+  // Helper method to make API requests
+  async makeRequest(endpoint, options = {}) {
+    if (!this.isInitialized()) {
+      throw new Error('Splitwise API not initialized. Please set up API key.')
+    }
+
+    const url = `${this.baseUrl}${endpoint}`
+    const headers = {
+      'Authorization': `Bearer ${this.apiKey}`,
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+
+    console.log(`Making request to: ${url}`)
+    
+    try {
+      const response = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        ...options
+      })
+
+      console.log(`Response status: ${response.status}`)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('API Error:', errorText)
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      console.log('API Response:', data)
+      return data
+    } catch (error) {
+      console.error('Request failed:', error)
+      throw error
+    }
   }
 
   // Get current user info
   async getCurrentUser() {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      console.log('Attempting to get current user...')
-      const user = await this.splitwise.getCurrentUser()
-      console.log('Current user retrieved:', user)
-      return user
+      console.log('Getting current user...')
+      const response = await this.makeRequest('/get_current_user')
+      return response.user
     } catch (error) {
       console.error('Error getting current user:', error)
       throw error
@@ -52,10 +69,9 @@ class SplitwiseApiService {
   // Get user's groups
   async getGroups() {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.getGroups()
+      console.log('Getting groups...')
+      const response = await this.makeRequest('/get_groups')
+      return response.groups
     } catch (error) {
       console.error('Error getting groups:', error)
       throw error
@@ -65,10 +81,12 @@ class SplitwiseApiService {
   // Create a new group
   async createGroup(groupData) {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.createGroup(groupData)
+      console.log('Creating group:', groupData)
+      const response = await this.makeRequest('/create_group', {
+        method: 'POST',
+        body: groupData
+      })
+      return response.group
     } catch (error) {
       console.error('Error creating group:', error)
       throw error
@@ -78,13 +96,15 @@ class SplitwiseApiService {
   // Add user to group
   async addUserToGroup(groupId, userData) {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.addUserToGroup({
-        group_id: groupId,
-        ...userData
+      console.log('Adding user to group:', { group_id: groupId, ...userData })
+      const response = await this.makeRequest('/add_user_to_group', {
+        method: 'POST',
+        body: {
+          group_id: groupId,
+          ...userData
+        }
       })
+      return response
     } catch (error) {
       console.error('Error adding user to group:', error)
       throw error
@@ -94,25 +114,14 @@ class SplitwiseApiService {
   // Create expense
   async createExpense(expenseData) {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.createExpense(expenseData)
+      console.log('Creating expense:', expenseData)
+      const response = await this.makeRequest('/create_expense', {
+        method: 'POST',
+        body: expenseData
+      })
+      return response.expense
     } catch (error) {
       console.error('Error creating expense:', error)
-      throw error
-    }
-  }
-
-  // Create debt (simpler way to create expenses)
-  async createDebt(debtData) {
-    try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.createDebt(debtData)
-    } catch (error) {
-      console.error('Error creating debt:', error)
       throw error
     }
   }
@@ -120,10 +129,9 @@ class SplitwiseApiService {
   // Get friends list
   async getFriends() {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
-      return await this.splitwise.getFriends()
+      console.log('Getting friends...')
+      const response = await this.makeRequest('/get_friends')
+      return response.friends
     } catch (error) {
       console.error('Error getting friends:', error)
       throw error
@@ -133,9 +141,6 @@ class SplitwiseApiService {
   // Search for users (filter friends)
   async searchUsers(query) {
     try {
-      if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
-      }
       const friends = await this.getFriends()
       return friends.filter(friend => 
         friend.first_name.toLowerCase().includes(query.toLowerCase()) ||
@@ -152,7 +157,7 @@ class SplitwiseApiService {
   async createExpensesForSplits(splits, orderData, groupId = null) {
     try {
       if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
+        throw new Error('Splitwise API not initialized. Please set up API key.')
       }
       
       console.log('Creating expenses for splits:', splits.length, 'splits')
@@ -213,7 +218,7 @@ class SplitwiseApiService {
   async createGroupExpense(splits, orderData, groupId, groupName = 'Instacart Order') {
     try {
       if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
+        throw new Error('Splitwise API not initialized. Please set up API key.')
       }
       
       const totalAmount = splits.reduce((sum, split) => sum + split.totalOwed, 0)
@@ -245,12 +250,12 @@ class SplitwiseApiService {
   async testConnection() {
     try {
       if (!this.isInitialized()) {
-        throw new Error('Splitwise API not initialized. Please set up consumer key and secret.')
+        throw new Error('Splitwise API not initialized. Please set up API key.')
       }
       console.log('Testing Splitwise connection...')
-      const result = await this.splitwise.test()
-      console.log('Splitwise test result:', result)
-      return result
+      const user = await this.getCurrentUser()
+      console.log('Splitwise test successful - connected as:', user.first_name, user.last_name)
+      return { success: true, user }
     } catch (error) {
       console.error('Error testing connection:', error)
       throw error

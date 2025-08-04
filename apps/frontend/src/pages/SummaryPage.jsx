@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import splitwiseApi from '../services/splitwiseApi'
 import { validateExpenseData } from '../utils/expenseHelpers'
 import LoadingSpinner from '../components/LoadingSpinner'
-import SplitwiseTest from '../components/SplitwiseTest'
 
 const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalSteps }) => {
   const [isSending, setIsSending] = useState(false)
@@ -47,7 +46,7 @@ const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalStep
     try {
       // Check if API is initialized
       if (!splitwiseApi.isInitialized()) {
-        throw new Error('Splitwise API not configured. Please set up consumer key and secret in your .env file.')
+        throw new Error('Splitwise API not configured. Please set up API key in your .env file.')
       }
       
       // Test the connection
@@ -57,7 +56,7 @@ const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalStep
       const currentUser = await splitwiseApi.getCurrentUser()
       console.log('Connected as:', currentUser.first_name, currentUser.last_name)
       
-      // Create expenses using the SDK
+      // Create expenses using the API
       const result = await splitwiseApi.createExpensesForSplits(splits, orderData)
       
       setIsSending(false)
@@ -69,11 +68,13 @@ const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalStep
       let errorMessage = 'Failed to send expenses to Splitwise'
       
       if (err.message.includes('not configured')) {
-        errorMessage = 'Splitwise API not configured. Please add your consumer key and secret to the .env file.'
-      } else if (err.message.includes('credentials')) {
-        errorMessage = 'Invalid Splitwise credentials. Please check your consumer key and consumer secret.'
-      } else if (err.message.includes('rate limit')) {
-        errorMessage = 'Rate limit exceeded. Please try again in a few minutes.'
+        errorMessage = 'Splitwise API not configured. Please add your API key to the .env file.'
+      } else if (err.message.includes('401')) {
+        errorMessage = 'Invalid API key. Please check your Splitwise API key.'
+      } else if (err.message.includes('403')) {
+        errorMessage = 'Access forbidden. Please check your API permissions.'
+      } else if (err.message.includes('CORS')) {
+        errorMessage = 'CORS error. The API may not be accessible from the browser.'
       } else if (err.message.includes('network')) {
         errorMessage = 'Network error. Please check your internet connection.'
       } else if (err.message) {
@@ -105,9 +106,6 @@ const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalStep
       <p className="subtitle">
         Review the final split and send to Splitwise
       </p>
-
-      {/* Debug component - remove this after fixing the issue */}
-      <SplitwiseTest />
 
       {error && (
         <div style={{ 
