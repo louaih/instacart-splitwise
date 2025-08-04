@@ -47,6 +47,98 @@ const SplitwiseTest = () => {
     }
   }
 
+  const testExpenseCreation = async () => {
+    setIsTesting(true)
+    setError(null)
+    setResult(null)
+    setApiStatus(null)
+    
+    try {
+      console.log('=== Testing Expense Creation ===')
+      
+      if (!splitwiseApi.isInitialized()) {
+        throw new Error('Splitwise API not initialized')
+      }
+      
+      setApiStatus('Testing expense creation...')
+      
+      // Create a simple test expense with correct format
+      const testExpense = {
+        cost: '10.00',
+        description: 'Test Expense',
+        details: 'This is a test expense',
+        date: new Date().toISOString().split('T')[0],
+        currency_code: 'USD',
+        category_id: 18,
+        group_id: 0,
+        // Current user pays and owes the full amount
+        users__0__user_id: null, // null means current user
+        users__0__paid_share: '10.00',
+        users__0__owed_share: '10.00'
+      }
+      
+      console.log('Creating test expense:', testExpense)
+      const result = await splitwiseApi.createExpense(testExpense)
+      console.log('Test expense created:', result)
+      
+      setResult({ type: 'expense', data: result })
+      setApiStatus('Test expense created successfully!')
+      
+    } catch (err) {
+      console.error('Expense test failed:', err)
+      setError(err.message)
+      setApiStatus('Expense creation failed')
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  const testUserMatching = async () => {
+    setIsTesting(true)
+    setError(null)
+    setResult(null)
+    setApiStatus(null)
+    
+    try {
+      console.log('=== Testing User Matching ===')
+      
+      if (!splitwiseApi.isInitialized()) {
+        throw new Error('Splitwise API not initialized')
+      }
+      
+      setApiStatus('Testing user matching...')
+      
+      // Get friends list
+      const friends = await splitwiseApi.getFriends()
+      console.log('Available friends:', friends)
+      
+      // Test matching some sample names
+      const testNames = ['John', 'Jane', 'Smith', 'Doe']
+      const matches = []
+      
+      for (const name of testNames) {
+        const match = await splitwiseApi.findUserByName(name)
+        matches.push({ name, found: !!match, user: match })
+      }
+      
+      console.log('User matching results:', matches)
+      
+      setResult({ 
+        type: 'matching', 
+        friends: friends,
+        matches: matches
+      })
+      setApiStatus(`Found ${friends.length} friends. Tested matching for ${testNames.length} names.`)
+      
+    } catch (err) {
+      console.error('User matching test failed:', err)
+      setError(err.message)
+      setApiStatus('User matching failed')
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
   return (
     <div style={{ 
       background: '#f8f9fa', 
@@ -61,14 +153,40 @@ const SplitwiseTest = () => {
         <p>Make sure you have set <code>VITE_SPLITWISE_API_KEY</code> in your .env file.</p>
       </div>
       
-      <button 
-        className="button" 
-        onClick={testConnection}
-        disabled={isTesting}
-        style={{ marginBottom: '15px' }}
-      >
-        {isTesting ? 'Testing API Connection...' : 'Test Splitwise API Connection'}
-      </button>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
+        <button 
+          className="button" 
+          onClick={testConnection}
+          disabled={isTesting}
+          style={{ marginBottom: '0' }}
+        >
+          {isTesting ? 'Testing...' : 'Test Connection'}
+        </button>
+        
+        <button 
+          className="button" 
+          onClick={testExpenseCreation}
+          disabled={isTesting}
+          style={{ 
+            marginBottom: '0',
+            background: '#17a2b8'
+          }}
+        >
+          {isTesting ? 'Testing...' : 'Test Expense Creation'}
+        </button>
+        
+        <button 
+          className="button" 
+          onClick={testUserMatching}
+          disabled={isTesting}
+          style={{ 
+            marginBottom: '0',
+            background: '#6f42c1'
+          }}
+        >
+          {isTesting ? 'Testing...' : 'Test User Matching'}
+        </button>
+      </div>
       
       {apiStatus && (
         <div style={{ 
@@ -103,10 +221,26 @@ const SplitwiseTest = () => {
           borderRadius: '5px',
           marginBottom: '15px'
         }}>
-          <strong>Success:</strong> Connected to Splitwise API
+          <strong>Success:</strong> {
+            result.type === 'expense' ? 'Test expense created!' : 
+            result.type === 'matching' ? 'User matching test completed!' :
+            'Connected to Splitwise API'
+          }
           {result.user && (
             <div style={{ marginTop: '5px', fontSize: '0.9rem' }}>
               Logged in as: {result.user.first_name} {result.user.last_name}
+            </div>
+          )}
+          {result.friends && (
+            <div style={{ marginTop: '5px', fontSize: '0.9rem' }}>
+              Available friends: {result.friends.length}
+              <div style={{ marginTop: '5px', maxHeight: '100px', overflowY: 'auto' }}>
+                {result.friends.map(friend => (
+                  <div key={friend.id} style={{ fontSize: '0.8rem' }}>
+                    • {friend.first_name} {friend.last_name}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

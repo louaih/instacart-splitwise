@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import splitwiseApi from '../services/splitwiseApi'
 import { validateExpenseData } from '../utils/expenseHelpers'
 import LoadingSpinner from '../components/LoadingSpinner'
+import SplitwiseTest from '../components/SplitwiseTest'
 
 const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalSteps }) => {
   const [isSending, setIsSending] = useState(false)
@@ -106,6 +107,9 @@ const SummaryPage = ({ orderData, setOrderData, prevStep, currentStep, totalStep
       <p className="subtitle">
         Review the final split and send to Splitwise
       </p>
+
+      {/* Debug component - remove this after fixing the issue */}
+      <SplitwiseTest />
 
       {error && (
         <div style={{ 

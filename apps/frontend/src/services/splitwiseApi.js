@@ -3,6 +3,8 @@ class SplitwiseApiService {
   constructor() {
     this.apiKey = import.meta.env.VITE_SPLITWISE_API_KEY
     this.baseUrl = 'https://secure.splitwise.com/api/v3.0'
+    // Local proxy server to avoid CORS issues
+    this.proxyUrl = 'http://localhost:3001/api/splitwise'
     
     // Debug logging
     console.log('Splitwise API Service - Environment Variables:')
@@ -20,7 +22,7 @@ class SplitwiseApiService {
       throw new Error('Splitwise API not initialized. Please set up API key.')
     }
 
-    const url = `${this.baseUrl}${endpoint}`
+    const url = `${this.proxyUrl}${endpoint}`
     const headers = {
       'Authorization': `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
@@ -28,21 +30,31 @@ class SplitwiseApiService {
     }
 
     console.log(`Making request to: ${url}`)
+    console.log('Request method:', options.method || 'GET')
+    console.log('Request headers:', headers)
+    console.log('Request body:', options.body)
     
     try {
-      const response = await fetch(url, {
+      const requestOptions = {
         method: options.method || 'GET',
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
         ...options
-      })
+      }
+      
+      // Ensure body is properly serialized
+      if (options.body) {
+        requestOptions.body = JSON.stringify(options.body)
+        console.log('Serialized request body:', requestOptions.body)
+      }
+      
+      const response = await fetch(url, requestOptions)
 
       console.log(`Response status: ${response.status}`)
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('API Error:', errorText)
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+        console.error('API Error Response:', errorText)
+        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`)
       }
 
       const data = await response.json()
@@ -153,7 +165,44 @@ class SplitwiseApiService {
     }
   }
 
-  // Create multiple expenses for the splits
+  // Search for users by name (first name, last name, or full name)
+  async findUserByName(name) {
+    try {
+      console.log('Searching for user:', name)
+      
+      // Get friends list
+      const friends = await this.getFriends()
+      console.log('Available friends:', friends.map(f => `${f.first_name} ${f.last_name}`))
+      
+      // Search by different name formats
+      const searchName = name.toLowerCase().trim()
+      const foundUser = friends.find(friend => {
+        const firstName = friend.first_name.toLowerCase()
+        const lastName = friend.last_name.toLowerCase()
+        const fullName = `${firstName} ${lastName}`
+        
+        return firstName === searchName || 
+               lastName === searchName || 
+               fullName === searchName ||
+               fullName.includes(searchName) ||
+               searchName.includes(firstName) ||
+               searchName.includes(lastName)
+      })
+      
+      if (foundUser) {
+        console.log('Found user:', foundUser)
+        return foundUser
+      } else {
+        console.log('User not found in friends list:', name)
+        return null
+      }
+    } catch (error) {
+      console.error('Error searching for user:', error)
+      return null
+    }
+  }
+
+  // Create multiple expenses for the splits with proper user mapping
   async createExpensesForSplits(splits, orderData, groupId = null) {
     try {
       if (!this.isInitialized()) {
@@ -163,16 +212,40 @@ class SplitwiseApiService {
       console.log('Creating expenses for splits:', splits.length, 'splits')
       
       const results = []
+      const userMapping = {} // Cache for user lookups
       
       for (const split of splits) {
-        const expenseData = this.formatExpenseForSplitwise(split, orderData, groupId)
-        console.log('Creating expense for:', split.person, expenseData)
-        const result = await this.createExpense(expenseData)
-        results.push({
-          ...result,
-          person: split.person,
-          amount: split.totalOwed
-        })
+        console.log(`Processing split for: ${split.person}`)
+        
+        // Find the Splitwise user for this person
+        let splitwiseUser = userMapping[split.person]
+        if (!splitwiseUser) {
+          splitwiseUser = await this.findUserByName(split.person)
+          userMapping[split.person] = splitwiseUser
+        }
+        
+        if (!splitwiseUser) {
+          console.warn(`Could not find Splitwise user for: ${split.person}`)
+          // Create expense for current user with note about intended recipient
+          const expenseData = this.formatExpenseForCurrentUser(split, orderData, groupId)
+          const result = await this.createExpense(expenseData)
+          results.push({
+            ...result,
+            person: split.person,
+            amount: split.totalOwed,
+            note: `Intended for: ${split.person} (not found in Splitwise friends)`
+          })
+        } else {
+          // Create expense for the found user
+          const expenseData = this.formatExpenseForUser(split, orderData, groupId, splitwiseUser)
+          const result = await this.createExpense(expenseData)
+          results.push({
+            ...result,
+            person: split.person,
+            amount: split.totalOwed,
+            splitwiseUser: splitwiseUser
+          })
+        }
       }
       
       return {
@@ -193,7 +266,7 @@ class SplitwiseApiService {
     const itemNames = items.map(item => item.name).join(', ')
     const expenseName = `Instacart Order - ${itemNames}`
     
-    // Format the expense data according to Splitwise API
+    // Format the expense data according to Splitwise API documentation
     const expenseData = {
       cost: totalOwed.toFixed(2),
       description: expenseName,
@@ -201,16 +274,70 @@ class SplitwiseApiService {
       date: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
       currency_code: 'USD',
       category_id: 18, // Food & Drink category
-      group_id: groupId,
-      users: [
-        {
-          user_id: null, // Will be set based on Splitwise user lookup
-          paid_share: totalOwed.toFixed(2),
-          owed_share: totalOwed.toFixed(2)
-        }
-      ]
+      group_id: groupId || 0,
+      // Current user pays and owes the full amount (simplified for now)
+      users__0__user_id: null, // null means current user
+      users__0__paid_share: totalOwed.toFixed(2),
+      users__0__owed_share: totalOwed.toFixed(2)
     }
 
+    return expenseData
+  }
+
+  // Format expense for current user (fallback when person not found)
+  formatExpenseForCurrentUser(split, orderData, groupId = null) {
+    const { person, itemsTotal, feeShare, totalOwed, items } = split
+    
+    const itemNames = items.map(item => item.name).join(', ')
+    const expenseName = `Instacart Order - ${itemNames}`
+    
+    return {
+      cost: totalOwed.toFixed(2),
+      description: expenseName,
+      details: `Items: ${itemNames} (Intended for: ${person})`,
+      date: new Date().toISOString().split('T')[0],
+      currency_code: 'USD',
+      category_id: 18,
+      group_id: groupId || 0,
+      users__0__user_id: null, // Current user
+      users__0__paid_share: totalOwed.toFixed(2),
+      users__0__owed_share: totalOwed.toFixed(2)
+    }
+  }
+
+  // Format expense for specific Splitwise user
+  formatExpenseForUser(split, orderData, groupId = null, splitwiseUser = null) {
+    const { person, itemsTotal, feeShare, totalOwed, items } = split
+    
+    const itemNames = items.map(item => item.name).join(', ')
+    const expenseName = `Instacart Order - ${itemNames}`
+    
+    const expenseData = {
+      cost: totalOwed.toFixed(2),
+      description: expenseName,
+      details: `Items: ${itemNames}`,
+      date: new Date().toISOString().split('T')[0],
+      currency_code: 'USD',
+      category_id: 18,
+      group_id: groupId || 0
+    }
+    
+    if (splitwiseUser) {
+      // Current user pays, specific user owes
+      expenseData.users__0__user_id = null // Current user (payer)
+      expenseData.users__0__paid_share = totalOwed.toFixed(2)
+      expenseData.users__0__owed_share = '0.00'
+      
+      expenseData.users__1__user_id = splitwiseUser.id // Specific user (owes)
+      expenseData.users__1__paid_share = '0.00'
+      expenseData.users__1__owed_share = totalOwed.toFixed(2)
+    } else {
+      // Fallback to current user
+      expenseData.users__0__user_id = null
+      expenseData.users__0__paid_share = totalOwed.toFixed(2)
+      expenseData.users__0__owed_share = totalOwed.toFixed(2)
+    }
+    
     return expenseData
   }
 
@@ -231,12 +358,11 @@ class SplitwiseApiService {
         date: new Date().toISOString().split('T')[0],
         currency_code: 'USD',
         category_id: 18, // Food & Drink
-        group_id: groupId,
-        users: splits.map(split => ({
-          user_id: null, // Will be set based on Splitwise user lookup
-          paid_share: '0.00',
-          owed_share: split.totalOwed.toFixed(2)
-        }))
+        group_id: groupId || 0,
+        // Current user pays the full amount
+        users__0__user_id: null, // null means current user
+        users__0__paid_share: totalAmount.toFixed(2),
+        users__0__owed_share: '0.00'
       }
 
       return await this.createExpense(expenseData)
